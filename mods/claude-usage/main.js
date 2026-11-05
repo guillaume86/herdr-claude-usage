@@ -9,8 +9,9 @@ const EVERY = 5 * 60e3;
 const STALE = 12 * 60e3;
 const SPAN = { session: 5 * 3600e3, weekly_all: 7 * 86400e3, weekly_scoped: 7 * 86400e3 };
 const BAR = ["session", "weekly_all"];
-const CLAY = { session: "#b98253", weekly_all: "#856144", weekly_scoped: "#856144" };
-const AMBER = "#ffb347", RED = "#ff5d6c";
+// Theme colors, so the meters follow the light and dark theme: the accent normally (weekly limits
+// a shade lighter, to tell them from the 5-hour one), the working amber from 80%, blocked from 95%.
+const WEEKLY_OPACITY = 0.6;
 const POPUP_W = 300, GAP = 6;
 const POPUP_CLOSED = "claude-usage.popup-closed";
 // A popup's closing and the bar's mouse-down land in one event, at most 1 ms apart when measured,
@@ -90,10 +91,13 @@ function pace(w) {
 
 function color(w, stale, t) {
   if (stale) return t.dim;
-  if (w.used >= 95) return RED;
-  if (w.used >= 80) return AMBER;
-  return CLAY[w.kind] ?? CLAY.weekly_all;
+  if (w.used >= 95) return t.blocked;
+  if (w.used >= 80) return t.working;
+  return t.accent;
 }
+
+// Only a calm weekly fill is lightened: a warning colour shows at full strength on every meter.
+const fillOpacity = (w, stale) => !stale && w.used < 80 && w.kind !== "session" ? WEEKLY_OPACITY : 1;
 
 function clock(ms) {
   const d = new Date(ms);
@@ -120,7 +124,7 @@ function meter(w, stale, t, height) {
   const ghost = stale ? null : pace(w);
   return div().relative().w_full().h(height).rounded(height / 2).bg(t.border)
     .when(ghost !== null, el => el.child(div().absolute().left(0).top(0).h_full().w(`${ghost * 100}%`).rounded(height / 2).bg(t.dim).opacity(0.35)))
-    .child(div().absolute().left(0).top(0).h_full().w(`${used}%`).rounded(height / 2).bg(color(w, stale, t)));
+    .child(div().absolute().left(0).top(0).h_full().w(`${used}%`).rounded(height / 2).bg(color(w, stale, t)).opacity(fillOpacity(w, stale)));
 }
 
 export default class ClaudeUsage extends View {
