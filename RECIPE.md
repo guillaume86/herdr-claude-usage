@@ -1,6 +1,6 @@
 # Claude Usage
 
-Your Claude plan limits in Herdr's status bar: the 5-hour and weekly usage as two small meters, each with a faint fill showing how much of the window has passed, so you can tell at a glance whether you are ahead of pace. Click it for a popup with every limit, its percentage (the same whole number Claude Code's `/usage` shows) and when it resets.
+Your Claude plan limits in Herdr's status bar: the 5-hour and weekly usage as two small pie charts, each with a faint wedge showing how much of the window has passed, so you can tell at a glance whether you are ahead of pace. Click it for a popup with every limit, its percentage (the same whole number Claude Code's `/usage` shows) and when it resets.
 
 ![Claude Usage](preview.png)
 
@@ -8,11 +8,11 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 
 ## What you see
 
-- **The bar**, a block about 330px wide and 28px high, meant for the right end of a status bar. Background `chrome`, 12px side padding, 12px gaps, text 11.8px.
+- **The bar**, a block about 200px wide and 28px high, meant for the right end of a status bar. Background `chrome`, 12px side padding, 12px gaps, text 11.8px.
   - Herdr's Claude icon (`icons/claude.svg`, 14px).
-  - Two meters, `5h` (the 5-hour session limit) and `7d` (the weekly limit): a `dim` label, an 80px wide, 5px high rounded track in `border`, and a 30px wide percentage in `muted`.
-  - The used fill takes theme colors, so it follows the light and dark theme: `accent` for 5h, and `accent` at 60% opacity for 7d (and weekly per-model limits). At 80% and above it turns `working` (the percentage too), at 95% and above `blocked`, both at full opacity on every meter.
-  - Behind it, a ghost fill in `dim` at 35% opacity shows the share of the window that has already elapsed. A lit fill past the ghost means you are using the limit faster than time passes.
+  - Two pies, `5h` (the 5-hour session limit) and `7d` (the weekly limit): a `dim` label, a 12px disk in `border`, and the percentage in `muted`, 6px apart.
+  - The used share is a wedge from 12 o'clock, clockwise. It takes theme colors, so it follows the light and dark theme: `accent` for 5h, and `accent` at 60% opacity for 7d (and weekly per-model limits). At 80% and above it turns `working` (the percentage too), at 95% and above `blocked`, both at full opacity on every pie. At 100% it is the whole disk.
+  - Behind it, a ghost wedge in `dim` at 35% opacity shows the share of the window that has already elapsed. A lit wedge past the ghost means you are using the limit faster than time passes.
   - Before the first fetch it shows `…`; with no data and an error, `no data`.
 - **The popup**, 300px wide, right-aligned with the bar and 6px above it, sized by content, 14px padding, 14px gaps, text 12px in `muted`, on `popover` with a 1px `border` and 8px corners.
   - A header: the Claude icon (16px), "Claude Usage" in 13px semibold `foreground`, and a "Refresh" button on the right (`dim`, `hover` background on hover), which reads "Refreshing…" and doesn't click while a fetch is in progress.
@@ -22,7 +22,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 ## How it behaves
 
 - Fetches on start, then at most every 5 minutes (a 60-second timer checks when the last fetch started). Every copy shares one result through shared state `"claude-usage"`, and one fetch at a time: a fetch writes `checked` and `started` there before its request and `finished` after, so several bars or a bar and the popup don't fetch twice. A fetch counts as in progress until it finishes or for 45 seconds (longer than the runtime's 30-second fetch timeout), so a request that never settles can't block the next one. One that expires unfinished (the popup closed on it, the layout switched, the app quit) is tried again at the timer's next check rather than after the 5 minutes, which also means a truly hung request is retried about once a minute. A fetch that ends after a newer one started is dropped.
-- Stale data (an error, or no successful fetch for 12 minutes) keeps the last numbers but greys the meters to `dim`, drops the ghost fill and dims the icon to 50%. The 12 minutes are one missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
+- Stale data (an error, or no successful fetch for 12 minutes) keeps the last numbers but greys the pies and meters to `dim`, drops the ghost fill and dims the icon to 50%. The 12 minutes are one missed cycle plus slack, so a slow fetch doesn't flash the bar grey.
 - Hover shows a tooltip with each bar limit's name, percentage and reset time, plus the last error.
 - Click opens the popup above the bar, and clicking the bar again closes it. Refresh fetches at once, unless a fetch is already in progress (then it reads "Refreshing…" until that one lands). Esc or a click elsewhere also closes it.
 - Agent statuses play no part; there are no animations.
@@ -36,7 +36,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
   { "id": "status-bar", "type": "row", "size": { "px": 28 }, "resizable": false,
     "children": [
       { "id": "status", "type": "block", "content": { "mod": "workspace-status" } },
-      { "id": "claude-usage", "type": "block", "size": { "px": 330 },
+      { "id": "claude-usage", "type": "block", "size": { "px": 200 },
         "content": { "mod": "claude-usage", "props": { "border": "top" } } } ] }
   ```
 
@@ -45,6 +45,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 - **The data**: `GET https://api.anthropic.com/api/oauth/usage` with `Authorization: Bearer <token>` and `anthropic-beta: oauth-2025-04-20`, through `fetch`. Newer responses carry `limits: [{ kind, percent, resets_at, scope: { model: { display_name } } }]` with kinds `session`, `weekly_all` and `weekly_scoped`; older ones carry `five_hour` / `seven_day` with `utilization` and `resets_at`. Both are mapped to `{ kind, model, used, resets_at }`, with `used` floored to a whole number as `/usage` does (so the numbers match and the 80/95 thresholds trip where the raw value does); a limit whose value isn't a number is left out, as `/usage` skips it. Window lengths for the ghost fill: 5 hours for `session`, 7 days for the weekly kinds.
 - **The token**: Claude Code's own OAuth login, read with `readTextFile` from `~/.claude/.credentials.json` and `~/.claude-work/.credentials.json` (`claudeAiOauth.accessToken`); when both exist, the one with the later `expiresAt` wins, since whichever Claude Code refreshed last holds the live token. The mod never stores, logs or refreshes the token; it sends it only to `api.anthropic.com`.
 - **Herdr functions**: `home`, `readTextFile`, `shared`, `setShared`, `props`, `openOverlay`, `settings`, `theme`; `image`, `div`, `h_flex`, `v_flex`, `.tooltip`, `.when`.
+- **The pies**: each wedge is a `PathBuilder.fill()` path in percent coordinates (center, up to 12 o'clock, `arc_to` with radius `50%`, `large_arc` above half, `sweep` true, close), painted with `window.paint_path(path, Background.solid(color).opacity(o))`, absolute over a rounded `border` disk. An arc can't end where it starts, so a full share is a rounded `div` instead.
 
 ## Watch out
 
@@ -62,8 +63,8 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 ## Done when
 
 - `herdr-app check mods/claude-usage` passes.
-- With Claude Code logged in, the bar shows `5h` and `7d` meters with the same percentages as Claude Code's `/usage`.
-- The ghost fill of `5h` grows over the session and resets with it.
+- With Claude Code logged in, the bar shows `5h` and `7d` pies with the same percentages as Claude Code's `/usage`.
+- The ghost wedge of `5h` grows over the session and resets with it.
 - Clicking the bar opens the 300px popup with every limit and its reset time; Refresh updates the footer's time; clicking the bar again closes it and the next click opens it.
 - Moving the credentials file away turns the meters grey within a fetch and the popup footer reads "fetch failed: no Claude Code login found"; putting it back recovers.
 - `herdr-app status` shows no errors from the mod.

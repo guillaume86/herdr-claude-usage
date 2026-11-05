@@ -1,6 +1,6 @@
 # Claude Usage for Herdr
 
-A [Herdr](https://herdr.dev) mod that shows your Claude plan limits in the status bar: the 5-hour and weekly usage as two small meters, with a faint fill for how much of each window has passed so you can see whether you're ahead of pace. Click it for every limit, its percentage (the same whole number as Claude Code's `/usage`) and when it resets.
+A [Herdr](https://herdr.dev) mod that shows your Claude plan limits in the status bar: the 5-hour and weekly usage as two small pie charts, with a faint wedge for how much of each window has passed so you can see whether you're ahead of pace. Click it for every limit, its percentage (the same whole number as Claude Code's `/usage`) and when it resets.
 
 ## Install
 

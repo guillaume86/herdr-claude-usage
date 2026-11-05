@@ -1,4 +1,4 @@
-import { View, div, image } from "gpui-kit";
+import { View, div, image, PathBuilder, Background } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { home, readTextFile, shared, setShared, props, openOverlay, settings, theme } from "herdr";
 
@@ -127,6 +127,33 @@ function meter(w, stale, t, height) {
     .child(div().absolute().left(0).top(0).h_full().w(`${used}%`).rounded(height / 2).bg(color(w, stale, t)).opacity(fillOpacity(w, stale)));
 }
 
+// The bar's compact form: a pie per limit, the used share as a wedge clockwise from 12 o'clock over a
+// disk in the track colour, with the elapsed share of the window as a ghost wedge behind it.
+const PIE = 12;
+
+function wedge(share) {
+  const a = share * 2 * Math.PI;
+  const x = 50 + 50 * Math.sin(a), y = 50 - 50 * Math.cos(a);
+  return PathBuilder.fill().move_to("50%", "50%").line_to("50%", "0%")
+    .arc_to("50%", "50%", 0, share > 0.5, true, `${x}%`, `${y}%`).close().build();
+}
+
+// An arc can't end where it starts, so a full share is a plain disk.
+function slice(share, color, opacity) {
+  if (!(share > 0)) return null;
+  const el = share >= 0.999
+    ? div().rounded(PIE / 2).bg(color).opacity(opacity)
+    : window.paint_path(wedge(share), Background.solid(color).opacity(opacity));
+  return el.absolute().top(0).left(0).size_full();
+}
+
+function pie(w, stale, t) {
+  const used = Math.min(100, Math.max(0, w.used ?? 0)) / 100;
+  const ghost = stale ? null : pace(w);
+  return div().relative().size(PIE).flex_none().rounded(PIE / 2).bg(t.border)
+    .children([slice(ghost, t.dim, 0.35), slice(used, color(w, stale, t), fillOpacity(w, stale))].filter(Boolean));
+}
+
 export default class ClaudeUsage extends View {
   init(_props, cx) {
     if (props()?.overlay) return;
@@ -187,8 +214,8 @@ export default class ClaudeUsage extends View {
       .when(!shown.length, el => el.child(div().text_color(t.dim).child(u?.error ? "no data" : "…")))
       .children(shown.map(w => h_flex().gap(6).items_center().flex_none()
         .child(div().text_color(t.dim).child(short(w)))
-        .child(div().w(80).child(meter(w, stale, t, 5)))
-        .child(div().w(30).text_color(stale ? t.dim : w.used >= 80 ? color(w, stale, t) : t.muted).child(`${w.used}%`))));
+        .child(pie(w, stale, t))
+        .child(div().text_color(stale ? t.dim : w.used >= 80 ? color(w, stale, t) : t.muted).child(`${w.used}%`))));
   }
 
   details() {
