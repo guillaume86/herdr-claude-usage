@@ -11,7 +11,7 @@ This file is the brief: enough to build Claude Usage from an empty folder. The f
 - **The bar**, a block about 330px wide and 28px high, meant for the right end of a status bar. Background `chrome`, 12px side padding, 12px gaps, text 11.8px.
   - Herdr's Claude icon (`icons/claude.svg`, 14px).
   - Two meters, `5h` (the 5-hour session limit) and `7d` (the weekly limit): a `dim` label, an 80px wide, 5px high rounded track in `border`, and a 30px wide percentage in `muted`.
-  - The used fill is clay: `#b98253` for 5h, `#856144` for 7d. At 80% and above it turns amber `#ffb347` (the percentage too), at 95% and above red `#ff5d6c`.
+  - The used fill takes theme colors, so it follows the light and dark theme: `accent` for 5h, and `accent` at 60% opacity for 7d (and weekly per-model limits). At 80% and above it turns `working` (the percentage too), at 95% and above `blocked`, both at full opacity on every meter.
   - Behind it, a ghost fill in `dim` at 35% opacity shows the share of the window that has already elapsed. A lit fill past the ghost means you are using the limit faster than time passes.
   - Before the first fetch it shows `…`; with no data and an error, `no data`.
 - **The popup**, 300px wide, right-aligned with the bar and 6px above it, sized by content, 14px padding, 14px gaps, text 12px in `muted`, on `popover` with a 1px `border` and 8px corners.
