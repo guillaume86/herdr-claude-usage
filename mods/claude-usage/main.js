@@ -1,4 +1,4 @@
-import { View, div, image, svg } from "gpui-kit";
+import { View, div, image, svg, PathBuilder, Background } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { home, exec, machines, readTextFile, shared, setShared, props, openOverlay, settings, theme, run } from "herdr";
 
@@ -9,6 +9,8 @@ const EVERY = 5 * 60e3;
 const STALE = 12 * 60e3;
 const SPAN = { session: 5 * 3600e3, weekly_all: 7 * 86400e3, weekly_scoped: 7 * 86400e3 };
 const BAR = ["session", "weekly_all"];
+// Weekly limits scoped to one model that the bar shows too, after 5h and 7d, as a two-letter tag.
+const BAR_MODELS = [{ match: /fable/i, tag: "Fb" }];
 // Theme colors, so the meters follow the light and dark theme: the accent normally (weekly limits
 // a shade lighter, to tell them from the 5-hour one), the working amber from 80%, blocked from 95%.
 const WEEKLY_OPACITY = 0.6;
@@ -187,6 +189,10 @@ const accountLabel = a => a.email ?? a.name ?? machineLabel(a.machines?.[0]);
 const where = a => `on ${(a.machines ?? []).map(machineLabel).join(", ")}`;
 
 const short = w => ({ session: "5h", weekly_all: "7d" })[w.kind] ?? `7d ${w.model ?? ""}`.trim();
+// The bar's label: 5h, 7d, or a scoped model's tag (Fb), first two letters when it has none.
+const tag = w => ({ session: "5h", weekly_all: "7d" })[w.kind]
+  ?? BAR_MODELS.find(m => m.match.test(w.model ?? ""))?.tag
+  ?? (w.model ?? "7d").slice(0, 2);
 const long = w => ({ session: "5-hour limit", weekly_all: "Weekly limit" })[w.kind] ?? `Weekly ${w.model ?? "model"} limit`;
 
 function pace(w) {
@@ -233,20 +239,41 @@ function meter(w, stale, t, height) {
     .child(div().absolute().left(0).top(0).h_full().w(`${used}%`).rounded(height / 2).bg(color(w, stale, t)).opacity(fillOpacity(w, stale)));
 }
 
-// The bar's compact form: a slim meter per limit, an 18 x 5 pill on the track colour with no outline,
-// drawn like the popup's meters: the used share in the limit's colour over a ghost fill for the
-// elapsed share of the window, so a fill past the ghost is running ahead of pace.
-const SLIM_W = 18, SLIM_H = 5;
+// The bar's compact form: a ring per limit, 13 px like the other status icons, with a 2 px stroke.
+// The track is the limit's colour faded; the used share is the same colour at full strength, an arc
+// clockwise from 12 o'clock. Paths are in percent of the ring's box, so they follow the zoom.
+const RING = 13, RING_STROKE = 2;
+const RING_R = ((RING - RING_STROKE) / 2 / RING) * 100;
+const TRACK_OPACITY = 0.3;
 const MONO = "Geist Mono";
 
-function slim(w, stale, t) {
+const pt = (deg) => {
+  const a = (deg * Math.PI) / 180;
+  return [`${50 + RING_R * Math.sin(a)}%`, `${50 - RING_R * Math.cos(a)}%`];
+};
+
+// A full circle is two half arcs: an arc can't end where it starts.
+function circle() {
+  const [x0, y0] = pt(0), [x1, y1] = pt(180);
+  return PathBuilder.stroke(RING_STROKE).move_to(x0, y0)
+    .arc_to(`${RING_R}%`, `${RING_R}%`, 0, false, true, x1, y1)
+    .arc_to(`${RING_R}%`, `${RING_R}%`, 0, false, true, x0, y0).build();
+}
+
+function arc(share) {
+  if (share >= 0.999) return circle();
+  const [x0, y0] = pt(0), [x1, y1] = pt(share * 360);
+  return PathBuilder.stroke(RING_STROKE).move_to(x0, y0)
+    .arc_to(`${RING_R}%`, `${RING_R}%`, 0, share > 0.5, true, x1, y1).build();
+}
+
+function ring(w, stale, t) {
   const used = Math.min(100, Math.max(0, w.used ?? 0)) / 100;
-  const ghost = stale ? null : pace(w);
-  const r = SLIM_H / 2;
-  return div().relative().w(SLIM_W).h(SLIM_H).flex_none().rounded(r).bg(t.border)
-    .when(ghost !== null && ghost > 0, el => el.child(div().absolute().left(0).top(0).h_full().w(SLIM_W * ghost).rounded(r).bg(t.dim).opacity(0.35)))
-    .when(used > 0, el => el.child(div().absolute().left(0).top(0).h_full().w(SLIM_W * used).rounded(r)
-      .bg(color(w, stale, t)).opacity(fillOpacity(w, stale))));
+  const c = color(w, stale, t);
+  const layer = (path, opacity) => window.paint_path(path, Background.solid(c).opacity(opacity)).absolute().top(0).left(0).size_full();
+  return div().relative().size(RING).flex_none()
+    .child(layer(circle(), TRACK_OPACITY))
+    .when(used > 0, el => el.child(layer(arc(used), fillOpacity(w, stale))));
 }
 
 // Spacing: the item's content sits in a pill (PILL_X a side) that lights up on hover like the tab
@@ -260,7 +287,10 @@ const planTag = (a, t) => a?.plan
   ? div().flex_none().px(5).py(1).rounded(4).border(1).border_color(t.border).text_size(10).text_color(t.dim).child(a.plan)
   : null;
 
-const barWindows = a => BAR.map(kind => a?.windows?.find(w => w.kind === kind)).filter(Boolean);
+const barWindows = a => [
+  ...BAR.map(kind => a?.windows?.find(w => w.kind === kind)),
+  ...BAR_MODELS.map(m => a?.windows?.find(w => w.kind === "weekly_scoped" && m.match.test(w.model ?? ""))),
+].filter(Boolean);
 const worst = list => Math.max(0, ...list.flatMap(a => isStale(a) ? [] : barWindows(a).map(w => w.used)));
 
 export default class ClaudeUsage extends View {
@@ -343,7 +373,7 @@ export default class ClaudeUsage extends View {
       .on_mouse_down("left", (e, cx) => { this.anchor = e.bounds; this.pressed = Date.now(); cx.stop_propagation(); })
       .on_click(() => this.toggle())
       .tooltip(tip)
-      // 6 px from the icon and before the +N badge, like the native icon labels; 12 between limits.
+      // 9 px after the icon and before the +N badge, 12 between limits (a 6 px gap plus margins).
       .child(h_flex().id("content").flex_none().h(PILL_H).px(PILL_X).rounded(6).gap(6).items_center()
         // Pressed while the popup is up (the selected colour, the icon in the foreground), lit on hover.
         .when(open, el => el.bg(t.selected))
@@ -353,11 +383,11 @@ export default class ClaudeUsage extends View {
       // height, so a 16 px box makes it as tall as their 13 px icons.
       .child(svg("mods/claude-usage/mascot.svg").size(16).flex_none().text_color(open ? t.foreground : t.muted).opacity(stale ? 0.5 : 1))
       .when(!shown.length, el => el.child(div().text_color(t.dim).child(main?.error || u?.error ? "no data" : "…")))
-      .children(shown.map((w, i) => h_flex().gap(6).items_center().flex_none().when(i > 0, el => el.ml(6))
-        .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(short(w)))
-        .child(slim(w, stale, t))
+      .children(shown.map((w, i) => h_flex().gap(6).items_center().flex_none().ml(i > 0 ? 6 : 3)
+        .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(tag(w)))
+        .child(ring(w, stale, t))
         .child(div().font_family(MONO).text_size(10.5).text_color(stale ? t.dim : w.used >= 80 ? color(w, stale, t) : t.muted).child(`${w.used}%`))))
-      .when(others.length > 0, el => el.child(div().flex_none().text_color(badge).child(`+${others.length}`))));
+      .when(others.length > 0, el => el.child(div().flex_none().ml(3).text_color(badge).child(`+${others.length}`))));
   }
 
   // The block takes the content's width, so the bar leaves no gap whatever it shows. The content
