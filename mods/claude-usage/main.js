@@ -1,4 +1,4 @@
-import { View, div, image, PathBuilder, Background } from "gpui-kit";
+import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { home, exec, machines, readTextFile, shared, setShared, props, openOverlay, settings, theme, run } from "herdr";
 
@@ -14,6 +14,8 @@ const BAR = ["session", "weekly_all"];
 const WEEKLY_OPACITY = 0.6;
 const POPUP_W = 300, GAP = 6;
 const POPUP_CLOSED = "claude-usage.popup-closed";
+// Whether the popup is up, so the bar can draw itself pressed like the tab bar's panel buttons.
+const POPUP_OPEN = "claude-usage.popup-open";
 // A popup's closing and the bar's mouse-down land in one event, at most 1 ms apart when measured,
 // and no deliberate second press comes this quickly.
 const SAME_PRESS = 250;
@@ -231,35 +233,27 @@ function meter(w, stale, t, height) {
     .child(div().absolute().left(0).top(0).h_full().w(`${used}%`).rounded(height / 2).bg(color(w, stale, t)).opacity(fillOpacity(w, stale)));
 }
 
-// The bar's compact form: a pie per limit, the used share as a wedge clockwise from 12 o'clock over a
-// disk in the track colour, with the elapsed share of the window as a ghost wedge behind it.
-const PIE = 12;
+// The bar's compact form: a slim meter per limit, an 18 x 5 pill on the track colour with no outline,
+// drawn like the popup's meters: the used share in the limit's colour over a ghost fill for the
+// elapsed share of the window, so a fill past the ghost is running ahead of pace.
+const SLIM_W = 18, SLIM_H = 5;
+const MONO = "Geist Mono";
 
-function wedge(share) {
-  const a = share * 2 * Math.PI;
-  const x = 50 + 50 * Math.sin(a), y = 50 - 50 * Math.cos(a);
-  return PathBuilder.fill().move_to("50%", "50%").line_to("50%", "0%")
-    .arc_to("50%", "50%", 0, share > 0.5, true, `${x}%`, `${y}%`).close().build();
-}
-
-// An arc can't end where it starts, so a full share is a plain disk.
-function slice(share, color, opacity) {
-  if (!(share > 0)) return null;
-  const el = share >= 0.999
-    ? div().rounded(PIE / 2).bg(color).opacity(opacity)
-    : window.paint_path(wedge(share), Background.solid(color).opacity(opacity));
-  return el.absolute().top(0).left(0).size_full();
-}
-
-function pie(w, stale, t) {
+function slim(w, stale, t) {
   const used = Math.min(100, Math.max(0, w.used ?? 0)) / 100;
   const ghost = stale ? null : pace(w);
-  return div().relative().size(PIE).flex_none().rounded(PIE / 2).bg(t.border)
-    .children([slice(ghost, t.dim, 0.35), slice(used, color(w, stale, t), fillOpacity(w, stale))].filter(Boolean));
+  const r = SLIM_H / 2;
+  return div().relative().w(SLIM_W).h(SLIM_H).flex_none().rounded(r).bg(t.border)
+    .when(ghost !== null && ghost > 0, el => el.child(div().absolute().left(0).top(0).h_full().w(SLIM_W * ghost).rounded(r).bg(t.dim).opacity(0.35)))
+    .when(used > 0, el => el.child(div().absolute().left(0).top(0).h_full().w(SLIM_W * used).rounded(r)
+      .bg(color(w, stale, t)).opacity(fillOpacity(w, stale))));
 }
 
-// The bar's side padding: 8 a side, so the item sits 16 px from its neighbours like a native one.
-const PAD = 8;
+// Spacing: the item's content sits in a pill (PILL_X a side) that lights up on hover like the tab
+// bar's Files / Changes buttons; PAD outside it, so PAD + PILL_X = 8 and the icons stay 16 px from
+// their neighbours. PILL_H 21 in the 30 px bar puts the pill (30 + 1 - 21) / 2 = 5 px from the top:
+// whole pixels at 100, 110 and 120 % zoom.
+const PAD = 2, PILL_X = 6, PILL_H = 21;
 
 // The account's plan as a small outlined tag.
 const planTag = (a, t) => a?.plan
@@ -271,7 +265,12 @@ const worst = list => Math.max(0, ...list.flatMap(a => isStale(a) ? [] : barWind
 
 export default class ClaudeUsage extends View {
   init(_props, cx) {
-    if (props()?.overlay) return;
+    if (props()?.overlay) {
+      setShared(POPUP_OPEN, true);
+      return;
+    }
+    // A popup never outlives the app: a flag left on by a crash is cleared when the bar starts.
+    if (shared(POPUP_OPEN)) setShared(POPUP_OPEN, false);
     const tick = cx => {
       const u = shared(KEY);
       // An attempt that expired unfinished was most likely cancelled with its copy (popup closed,
@@ -287,7 +286,9 @@ export default class ClaudeUsage extends View {
   }
 
   async close() {
-    if (props()?.overlay) setShared(POPUP_CLOSED, Date.now());
+    if (!props()?.overlay) return;
+    setShared(POPUP_CLOSED, Date.now());
+    setShared(POPUP_OPEN, false);
   }
 
   render() {
@@ -324,6 +325,7 @@ export default class ClaudeUsage extends View {
     const stale = isStale(main);
     const shown = barWindows(main);
     const edge = props()?.border;
+    const open = Boolean(shared(POPUP_OPEN));
     const line = a => barWindows(a).map(w => `${short(w)} ${w.used}%`).join(", ") || "no data";
     const tip = !shown.length ? (main?.error ?? u?.error ?? "Loading Claude usage")
       : [
@@ -341,14 +343,20 @@ export default class ClaudeUsage extends View {
       .on_mouse_down("left", (e, cx) => { this.anchor = e.bounds; this.pressed = Date.now(); cx.stop_propagation(); })
       .on_click(() => this.toggle())
       .tooltip(tip)
-      .child(h_flex().id("content").flex_none().gap(12).items_center()
+      // 6 px from the icon and before the +N badge, like the native icon labels; 12 between limits.
+      .child(h_flex().id("content").flex_none().h(PILL_H).px(PILL_X).rounded(6).gap(6).items_center()
+        // Pressed while the popup is up (the selected colour, the icon in the foreground), lit on hover.
+        .when(open, el => el.bg(t.selected))
+        .hover(s => s.bg(t.hover))
         .on_size_change(size => this.fit(size.width))
-      .child(image("icons/claude.svg").size(13).flex_none().opacity(stale ? 0.5 : 1))
+      // The mascot in the muted grey of the other status icons; its art fills 15 of 24 units in
+      // height, so a 16 px box makes it as tall as their 13 px icons.
+      .child(svg("mods/claude-usage/mascot.svg").size(16).flex_none().text_color(open ? t.foreground : t.muted).opacity(stale ? 0.5 : 1))
       .when(!shown.length, el => el.child(div().text_color(t.dim).child(main?.error || u?.error ? "no data" : "…")))
-      .children(shown.map(w => h_flex().gap(6).items_center().flex_none()
-        .child(div().text_color(t.dim).child(short(w)))
-        .child(pie(w, stale, t))
-        .child(div().text_color(stale ? t.dim : w.used >= 80 ? color(w, stale, t) : t.muted).child(`${w.used}%`))))
+      .children(shown.map((w, i) => h_flex().gap(6).items_center().flex_none().when(i > 0, el => el.ml(6))
+        .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(short(w)))
+        .child(slim(w, stale, t))
+        .child(div().font_family(MONO).text_size(10.5).text_color(stale ? t.dim : w.used >= 80 ? color(w, stale, t) : t.muted).child(`${w.used}%`))))
       .when(others.length > 0, el => el.child(div().flex_none().text_color(badge).child(`+${others.length}`))));
   }
 
@@ -373,7 +381,7 @@ export default class ClaudeUsage extends View {
       .children((a.windows ?? []).map(w => v_flex().gap(5)
         .child(h_flex().justify_between().items_baseline()
           .child(div().text_color(t.foreground).child(long(w)))
-          .child(div().font_semibold().text_color(color(w, stale, t)).child(`${w.used}%`)))
+          .child(div().font_family(MONO).font_semibold().text_color(color(w, stale, t)).child(`${w.used}%`)))
         .child(meter(w, stale, t, 5))
         .child(div().text_size(11).text_color(t.dim).child(resets(w)))))
       .when(many && Boolean(a.error), el => el.child(div().text_size(11).text_color(t.blocked)
