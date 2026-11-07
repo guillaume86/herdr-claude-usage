@@ -1,6 +1,6 @@
 import { View, div, image, svg, PathBuilder, Background } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { home, exec, machines, readTextFile, shared, setShared, props, openOverlay, settings, theme, run } from "herdr";
+import { home, exec, machines, spaces, readTextFile, shared, setShared, props, openOverlay, settings, theme, run } from "herdr";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const KEY = "claude-usage";
@@ -177,6 +177,15 @@ function pick(list, want) {
   return list.find(match) ?? list.find(a => a.machines?.includes(null)) ?? list[0] ?? null;
 }
 
+// The account the bar shows, from the `account` prop: `"focused"`, the default, follows the machine
+// of the space you are in (its name, or "local" for this computer); anything else is used as given.
+function wanted() {
+  const want = props()?.account ?? "focused";
+  if (want !== "focused") return want;
+  const space = spaces().find(s => s.active);
+  return space?.machine ?? "local";
+}
+
 // The bar's account first, then the others as found.
 function ordered(u, want) {
   const list = Array.isArray(u?.accounts) ? u.accounts : [];
@@ -331,14 +340,14 @@ export default class ClaudeUsage extends View {
   open() {
     const b = this.anchor;
     const z = Number(settings()?.zoom) || 1;
-    const list = ordered(shared(KEY), props()?.account);
+    const list = ordered(shared(KEY), wanted());
     const rows = Math.max(3, list.reduce((n, a) => n + (a.windows?.length ?? 0), 0));
     const want = 120 + rows * 90 + (list.length > 1 ? list.length * 44 : 0);
     const height = b ? Math.min(want, b.y / z - GAP) : want;
     const at = b ? { x: Math.max(0, b.x + b.width - (POPUP_W + GAP) * z), y: b.y - (height + GAP) * z } : undefined;
     openOverlay({
       mod: "claude-usage", kind: "popup", frame: "none", width: POPUP_W, height, at,
-      props: { details: true, height, account: props()?.account, machines: props()?.machines },
+      props: { details: true, height, account: wanted(), machines: props()?.machines },
     });
   }
 
@@ -351,7 +360,7 @@ export default class ClaudeUsage extends View {
   bar() {
     const t = theme();
     const u = shared(KEY);
-    const [main, ...others] = ordered(u, props()?.account);
+    const [main, ...others] = ordered(u, wanted());
     const stale = isStale(main);
     const shown = barWindows(main);
     const edge = props()?.border;
@@ -421,7 +430,7 @@ export default class ClaudeUsage extends View {
   details() {
     const t = theme();
     const u = shared(KEY);
-    const list = ordered(u, props()?.account);
+    const list = ordered(u, wanted());
     const many = list.length > 1;
     // One account: its state is the footer, as before. Several: each section says its own failure.
     const one = many ? null : list[0];

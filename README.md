@@ -2,7 +2,7 @@
 
 A [Herdr](https://herdr.dev) mod that shows your Claude plan limits in the status bar: the 5-hour, weekly and weekly Fable usage as small rings, each filling clockwise as the limit is used. Click it for every limit, its percentage (the same whole number as Claude Code's `/usage`) and when it resets.
 
-Linked machines logged in to other accounts? Set `"machines": true` in the block's props: the bar keeps showing one account (this computer's, or the one named by `"account"`, an email or a machine name) with a `+1` for the others, and the popup lists them all. See [RECIPE.md](RECIPE.md#built-from).
+Linked machines logged in to other accounts? Set `"machines": true` in the block's props: the bar shows one account, by default the one logged in on the machine of the space you are in (or set `"account"` to an email, a machine name, or `"local"` for this computer's) with a `+1` for the others, and the popup lists them all. See [RECIPE.md](RECIPE.md#built-from).
 
 ## Install
 
