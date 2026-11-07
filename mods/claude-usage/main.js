@@ -258,7 +258,8 @@ function pie(w, stale, t) {
     .children([slice(ghost, t.dim, 0.35), slice(used, color(w, stale, t), fillOpacity(w, stale))].filter(Boolean));
 }
 
-const PAD = 12;
+// The bar's side padding: 8 a side, so the item sits 16 px from its neighbours like a native one.
+const PAD = 8;
 
 // The account's plan as a small outlined tag.
 const planTag = (a, t) => a?.plan
@@ -342,7 +343,7 @@ export default class ClaudeUsage extends View {
       .tooltip(tip)
       .child(h_flex().id("content").flex_none().gap(12).items_center()
         .on_size_change(size => this.fit(size.width))
-      .child(image("icons/claude.svg").size(14).flex_none().opacity(stale ? 0.5 : 1))
+      .child(image("icons/claude.svg").size(13).flex_none().opacity(stale ? 0.5 : 1))
       .when(!shown.length, el => el.child(div().text_color(t.dim).child(main?.error || u?.error ? "no data" : "…")))
       .children(shown.map(w => h_flex().gap(6).items_center().flex_none()
         .child(div().text_color(t.dim).child(short(w)))
